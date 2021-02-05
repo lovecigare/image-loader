@@ -1,0 +1,303 @@
+<link href="<?php echo SITE_THEME_PATH; ?>/styles/annotation.css" rel="stylesheet">
+ 
+ 
+ <?php
+    
+    $pid = $_REQUEST['pid'];
+    $db = Database::getDatabase(true);
+    $sql = "select * from submission_list where id=" . $pid;
+    $rows = $db->getRows($sql);
+    $file     = file::loadByShortUrl($rows[0]['shorturl']);
+
+    define("PAGE_NAME", $file->originalFilename . ' ' . t("docviewer_plugin_watch_page_name", "Preview"));
+    define("PAGE_DESCRIPTION", t("docviewer_plugin_page_description", "Preview ") . ' ' . $file->originalFilename);
+    define("PAGE_KEYWORDS", strtolower($file->originalFilename) . t("docviewer_plugin_meta_keywords", ", preview, file, upload, download, site"));
+
+    // include header
+    require_once(SITE_TEMPLATES_PATH . '/partial/_header.inc.php');
+
+    
+ ?>
+  <style>
+      .navbar-inverse {
+        background-color: #fff;
+        /* border-color: #080808; */
+        /* background: rgba(242, 242, 242, 0.9); */
+        -webkit-box-shadow: 0 2px 2px rgb(0 0 0 / 30%);
+        box-shadow: 0 2px 2px rgb(0 0 0 / 30%);
+        position: fixed;
+        justify-content: center;
+        width: 100%; 
+      }
+ </style>
+
+   
+<div id="cobar" class="controlbar" style="background: #c04646;">
+    <div>
+        <img alt="A Pen Icon" width="32" height="32" id="penicon" src="https://resources.eltbuzz.com/directory/images/pen.3f72d229.svg">
+        <img alt="An Eraser Icon" width="32" height="32" id="erasericon" src="https://resources.eltbuzz.com/directory/images/eraser.8d3f2c35.svg">
+        <img alt="A Cursor Icon" width="32" height="32" id="cursoricon" src="https://resources.eltbuzz.com/directory/images/cursor-text-white.f8114666.svg">
+        <img alt="A Zoom In Icon" width="32" height="32" id="zoomicon" src="https://resources.eltbuzz.com/directory/images/zoom-in.7c7b4570.svg">
+        <img alt="A Zoon Out Icon" width="32" height="32" id="zoomouticon" src="https://resources.eltbuzz.com/directory/images/zoom-out.0151d646.svg">
+        <img alt="A Print Icon" width="32" height="32" id="printicon" src="https://resources.eltbuzz.com/directory/images/print.png">
+        <img alt="A Trashcan Icon" width="32" height="32" id="trashicon" src="https://resources.eltbuzz.com/directory/images/trash.caa5ed5c.svg">
+        <button id="saveBtn" type="button" class="ml-4 btn btn-primary btn-sm" style="margin-left:15px;">Save</button>
+    </div>
+    <div style="margin-bottom: 3px;margin-left:40px;"><input class="nav-input" placeholder="Enter your name" value=""></div>
+</div>
+
+<div class="pagecontent" id="pagecontent">
+    <center>
+        <canvas id="pdf-canvas" width=1172 height=1300></canvas>
+        <div id="page-loader">Loading page ...</div>
+    </center>
+</div>
+
+<div id="test"></div>
+<script>
+    var imgSrc = <?php echo "'". $rows[0]['pdf_img']."'";?>;
+    var bgImg = document.getElementById("pagecontent");
+    var canvas = document.getElementById('pdf-canvas');
+    var context = canvas.getContext('2d');
+    var image = new Image();
+    bgImg.style.background = "url("+imgSrc+")";
+    //image.src = <?php echo "'". $rows[0]['pdf_img']."'";?>;
+    
+    image.addEventListener('load', function(){
+
+        context.drawImage(image, 0,0);
+    });
+
+var pid = <?php echo "'". $rows[0]['shorturl'] ."'" ?>;
+const colour = "#d31515";
+const strokeWidth = 2;
+var latestPoint;
+var drawing = false;
+var flag = 1;
+var tx;
+var ty;
+var infoArray = [];
+var textAreas = [];
+var strokes = [];  
+var curStroke = [];
+
+var cnt =1;
+$("#zoomicon").on("click", function(){
+    cnt *= 1.1;
+    var zoomin = document.getElementById("pagecontent");
+    zoomin.style.zoom = cnt;
+});
+
+$("#zoomouticon").on("click", function(){
+    cnt /= 1.1;
+    var zoomin = document.getElementById("pagecontent");
+    zoomin.style.zoom = cnt;
+});
+
+$("#penicon").on('click',function(){
+    flag = 2;
+    pendraw();
+});
+
+$("#cursoricon").on('click',function(){
+    flag = 1;
+    drawtextfun();
+});
+
+function makeTextElement(clientX, clientY, content = ""){
+    var strongTag = document.createElement("strong");
+    strongTag.classList.add("move-handle");
+    strongTag.innerHTML = '<img draggable="false" style="margin-left:3px;" id="moveicon" src="https://resources.eltbuzz.com/directory/images/arrows-move.545246ec.svg" alt="move icon">';
+
+    var tmpDiv = document.createElement("div");
+    tmpDiv.classList.add("react-draggable");
+    tmpDiv.classList.add("react-draggable-dragged");
+    tmpDiv.style.transform = "translate("+ clientX +"px, "+clientY+"px";
+    tmpDiv.innerHTML = '<textarea class="invisible-floating-input" style="border:2px;border-style:solid; color:#d31515;" rows="1" cols="15" autofocus></textarea>';;
+    tmpDiv.appendChild(strongTag);
+    
+    tmpDiv.firstChild.addEventListener("focus", function(event) {
+        var parent = event.target.parentNode;
+        parent.appendChild(strongTag);
+        event.target.style.borderStyle = "solid";
+    })
+
+    tmpDiv.firstChild.addEventListener("blur", function(event) {
+        event.target.style.borderStyle = "none";
+        var parent = event.target.parentNode;
+        parent.removeChild(parent.lastChild);
+    })
+
+    tmpDiv.firstChild.focus();
+
+    return tmpDiv;
+}
+
+function drawtextfun(){
+    document.getElementById("penicon").src = "https://resources.eltbuzz.com/directory/images/pen.3f72d229.svg";
+    document.getElementById("erasericon").src = "https://resources.eltbuzz.com/directory/images/eraser.8d3f2c35.svg";
+    document.getElementById("cursoricon").src = "https://resources.eltbuzz.com/directory/images/cursor-text-white.f8114666.svg";
+    document.getElementById("pagecontent").style.cursor ="default";
+   
+    let text;
+    const canvas = document.getElementById("pdf-canvas");
+    const context = canvas.getContext("2d");
+    
+    var drawtext = document.getElementById("test");
+    
+
+    var mouseclick = canvas.addEventListener('click',function(e){
+        if(flag != 1){
+            return;
+        } 
+            
+        let rect = canvas.getBoundingClientRect(); 
+        let tx = e.clientX - rect.left; 
+        let ty = e.clientY - rect.top;
+        console.log("x: " + tx + " y: " + ty)
+        var test = document.getElementById("test");
+        test.childNodes.forEach((child) => {
+            if(child.firstChild.value == ""){
+                test.removeChild(child);
+            }  
+    //           $("strong").remove();
+        });
+
+        var newDiv = makeTextElement(e.pageX, e.pageY);
+        test.appendChild(newDiv);
+        newDiv.firstChild.focus();
+
+    });
+
+    drawtext.addEventListener("change", function(evn){
+        text = evn.target.value;
+        if(text != ""){
+            textAreas.push({
+                tx: tx,
+                ty: ty,
+                val: evn.target.value
+            });
+        }
+
+        textAreas.forEach((ta) => {
+            if(ta['val'] == ""){
+                textAreas.remove(ta);
+            }
+        });
+
+        infoArray.forEach( (info) => {
+            if(info['url'] == pid){
+                info['textAreas'] = textAreas;
+            }
+        });
+        localStorage.setItem("info", JSON.stringify(infoArray));
+
+    });
+
+   
+}
+
+
+function pendraw(){
+    document.getElementById("penicon").src = "https://resources.eltbuzz.com/directory/images/pen-white.90f27e5d.svg";
+    document.getElementById("erasericon").src = "https://resources.eltbuzz.com/directory/images/eraser.8d3f2c35.svg";
+    document.getElementById("cursoricon").src = "https://resources.eltbuzz.com/directory/images/cursor-text.0921ae32.svg";
+    document.getElementById("pagecontent").style.cursor ="url('https://resources.eltbuzz.com/directory/images/pen.3f72d229.svg'),auto";
+    
+    const BUTTON = 0b01;
+    const mouseButtonIsDown = buttons => (BUTTON & buttons) === BUTTON;
+
+    const mouseMove = evt => {
+        if (!drawing) {
+            return;
+        }
+        continueStroke([evt.offsetX, evt.offsetY+12]);
+    };
+
+    const mouseDown = evt => {
+        if (drawing || flag != 2) {
+            return;
+        }
+        evt.preventDefault();
+        canvas.addEventListener("mousemove", mouseMove, false);
+        startStroke([evt.offsetX, evt.offsetY+12]);
+    };
+
+    const mouseEnter = evt => {
+       if (!mouseButtonIsDown(evt.buttons) || drawing) {
+           return;
+       }
+        mouseDown(evt);
+    };
+
+
+    const startStroke = point => {
+        drawing = true;
+        latestPoint = point;
+
+        curStroke = new Array();
+        curStroke.push(point);
+    };
+
+    const continueStroke = newPoint => {
+        context.beginPath();
+        context.moveTo(latestPoint[0], latestPoint[1]);
+        context.strokeStyle = colour;
+        context.lineWidth = strokeWidth;
+        context.lineCap = "round";
+        context.lineJoin = "round";
+        context.lineTo(newPoint[0], newPoint[1]);
+        context.stroke();
+        
+        latestPoint = newPoint;
+        curStroke.push(newPoint);
+    };
+
+    const endStroke = evt => {
+        if (!drawing) {
+            return;
+        }
+        drawing = false;
+        evt.currentTarget.removeEventListener("mousemove", mouseMove, false);
+        strokes.push(curStroke);
+        infoArray.forEach( (info) => {
+            if(info['url'] == pid){
+                info['strokes'] = strokes;
+            }
+        });
+        localStorage.setItem("info", JSON.stringify(infoArray));
+    };
+
+    canvas.addEventListener("mousedown", mouseDown, false);
+    canvas.addEventListener("mouseup", endStroke, false);
+    canvas.addEventListener("mouseout", endStroke, false);
+    canvas.addEventListener("mouseenter", mouseEnter, false);
+}
+
+window.onload = function() {
+    if (typeof(Storage) !== "undefined") {
+        if(localStorage.getItem("info") == undefined){
+            infoArray = new Array();
+
+            infoArray.push({
+                "url" : pid,
+                "textAreas" : new Array(),
+                "strokes" : new Array()
+            });
+            strokes = new Array();
+            textAreas = new Array();
+
+            localStorage.setItem("info", JSON.stringify(infoArray));
+        }else{
+            infoArray = JSON.parse(localStorage.getItem("info"));console.log(infoArray);
+            infoArray.forEach((info) => {
+                if(info['url'] == pid){
+                    strokes = info['strokes'];
+                    textAreas = info['textAreas'];
+                } 
+            });
+        }
+    }
+
+}
+</script>

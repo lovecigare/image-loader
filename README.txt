@@ -1,0 +1,1 @@
+this is loading method in base64 image from homepage.
